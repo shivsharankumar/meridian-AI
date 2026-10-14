@@ -1,0 +1,6 @@
+.env
+.venv/
+.venv.env
+.meridian/
+logs/
+node_modules/
