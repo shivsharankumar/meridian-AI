@@ -26,3 +26,17 @@ uv run python -c "from config.settings import settings; print(settings.app_mode)
 
 #to check key :
 uv run python -c "from config.settings import settings; from langchain_google_genai import ChatGoogleGenerativeAI as G; print(G(model=settings.llm_model_name,google_api_key=settings.GOOGLE_API_KEY).invoke('reply with exactly:hello').text)"
+wc -l exceptions/__init__.py logger/__init__.py
+uv run python -c "from logger import GLOBAL_LOGGER as log; log.info('hello',step=3)"
+git add -A
+git commit -m "Backbone:settings,errors,logging"
+git status --short
+git push origin main
+
+
+
+uv run python -c "from rag.llm import get_llm,extract_text; r=get_llm().invoke('Re
+ply with exactly: hello'); print(type(r.content).__name__,repr(extract_text(r.content)))"
+list 'hello'
+
+
