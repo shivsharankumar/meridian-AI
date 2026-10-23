@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from rag.vector_store import get_vector_store
-from rag.llm import get_llm
+from rag.llm import get_llm,extract_text
 from langchain_core.documents import Document
 from variants_data import SENTENCES
 from langchain_chroma import Chroma 
@@ -35,3 +35,27 @@ store.reset_collection()
 store.add_documents(DOCS,ids=list(By_ID))
 def basic(question,k=3):
     return store.similarity_search(question,k=k)
+
+def mmr(question,k=3):
+    """Maximal marginal relevance:relevant but not three copies of the same idea."""
+    return store.max_marginal_relevance_search(question,k=k,fetch_k=10)
+
+def hyde(question,k=3):
+    """Search with an imagined answer instead of the question (HyDE)"""
+    reply=get_llm().invoke(f"Write one sentence that could answer this question:{question}")
+    imagined=extract_text(reply.content)
+    return store.similarity_search(imagined,k=k)
+import re
+import math
+def words(text):
+    return set(re.findall(r"[a-z0-9]+",text.lower()))
+
+def keyword_rank(question):
+    """A tiny keyword ranking: count the shared words and let rare words count more."""
+    vocabulary=set().union(*(words(d.page_content) for d in DOCS))
+    rarity={w:math.log(len(DOCS)/sum(w in words(d.page_content) for d in DOCS)) for w in vocabulary}
+    score={}
+    for doc in DOCS:
+        shared=words(question) & words(doc.page_content)
+        score[doc.metadata["id"]]=sum(rarity[w] for w in shared)
+    return sorted(score,key=score.get,reverse=True)
