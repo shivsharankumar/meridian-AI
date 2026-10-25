@@ -1,7 +1,7 @@
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from rag.llm import extract_text,get_llm
-
+from agent.tools import validate_fx_hedge
 @tool
 def approval_needed(amount_eur:float) -> str:
     """Says who must approve a purchase of this amount,in euros."""
@@ -13,7 +13,7 @@ def approval_needed(amount_eur:float) -> str:
 
 agent=create_agent(
     model=get_llm(),
-    tools=[approval_needed],
+    tools=[approval_needed,validate_fx_hedge],
     system_prompt="You are a procurement assistant. always use your tool. Do not guess."
 )
 
@@ -21,3 +21,4 @@ result=agent.invoke({"messages":[{"role":"user","content":"Who must approve a pu
 for message in result["messages"]:
     calls=getattr(message,"tool_calls",None)
     print(f"{message.type:6}",calls if calls else extract_text(message.content))
+
