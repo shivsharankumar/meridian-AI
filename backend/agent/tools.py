@@ -2,23 +2,32 @@ import json
 import requests
 from langchain_core.tools import tool
 from typing import Dict
-from rag.llm import extract_text,get_llm
+from rag.llm import extract_text, get_llm
 from logger import GLOBAL_LOGGER as log
 
-#internal LLm Helper
-def _ask_llm(prompt:str) -> str:
+
+# ==========================================
+# INTERNAL LLM HELPER
+# ==========================================
+
+def _ask_llm(prompt: str) -> str:
     """Invoke the configured LLM and return the text content."""
     try:
-        response=get_llm().invoke(prompt)
+        response = get_llm().invoke(prompt)
         return extract_text(response.content)
     except Exception as e:
-        return f"LLM_Error:{str(e)}"
+        return f"LLM_ERROR: {str(e)}"
 
-#step 1 : Define dynamic tool sets
-#Agent 1 tools : Risk & compliance
+
+# ==========================================
+# STEP 1: DEFINE DYNAMIC TOOLSETS
+# ==========================================
+
+# --- Agent 1 Tools: Risk & Compliance ---
+
 @tool
-def check_sanctions_list(vendor_name:str) -> str:
-    """Check if a vendor is on global restricted/sanctioned entities lists."""
+def check_sanctions_list(vendor_name: str) -> str:
+    """Checks if a vendor is on global restricted/sanctioned entities lists."""
     prompt = f"""You are a compliance screening system. Your job is to check whether the 
 vendor name below appears on any major global sanctions or restricted-entity lists based 
 on your training knowledge.
@@ -42,13 +51,15 @@ INSTRUCTIONS:
 - Be precise. Do not fabricate matches — only flag if you have genuine knowledge.
 
 Respond in a single concise paragraph starting with either "RED ALERT:" or "CLEARED:"."""
-    result=_ask_llm(prompt)
+
+    result = _ask_llm(prompt)
     if result.startswith("LLM_ERROR"):
-        return f"SYSTEM WARNING : Sanctions check unavailable-{result}. Manual review required."
+        return f"SYSTEM WARNING: Sanctions check unavailable — {result}. Manual review required."
     return result
 
+
 @tool
-def get_vendor_credit_score(vendor_name:str) -> str:
+def get_vendor_credit_score(vendor_name: str) -> str:
     """Retrieves vendor creditworthiness assessment based on publicly known financial health signals."""
     prompt = f"""You are a financial credit assessment system. Provide a credit score 
 estimate (0-100) for the vendor below based on your training knowledge.
@@ -78,6 +89,7 @@ If the vendor is completely unknown, assign a score of 45 (MODERATE-HIGH risk) a
 that insufficient data is available.
 
 Respond ONLY with the JSON object, no other text."""
+
     result = _ask_llm(prompt)
     if result.startswith("LLM_ERROR"):
         return f"SYSTEM WARNING: Credit check unavailable — {result}. Manual review required."
@@ -98,11 +110,12 @@ Respond ONLY with the JSON object, no other text."""
     except (json.JSONDecodeError, KeyError):
         # Return raw LLM response if parsing fails
         return result
-    
 
-#Agent 2 tools :Tax & Treasury
+
+# --- Agent 2 Tools: Tax & Treasury ---
+
 @tool
-def claculate_cross_border_tax(amount:float,origin:str,destination:str) -> Dict:
+def calculate_cross_border_tax(amount: float, origin: str, destination: str) -> Dict:
     """Calculates VAT/GST and Import Duties for cross-border transactions."""
     prompt = f"""You are an international tax calculation system. Calculate the applicable 
 taxes for the following cross-border transaction:
@@ -160,6 +173,7 @@ Respond ONLY with the JSON object, no other text."""
             "note": "Fallback rate used — LLM response could not be parsed",
             "raw_response": result,
         }
+
 
 @tool
 def validate_fx_hedge(currency_pair: str, rate_used: float) -> str:
