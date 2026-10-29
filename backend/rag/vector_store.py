@@ -7,12 +7,16 @@ from exceptions import ConfigurationError
 from logger import GLOBAL_LOGGER as log
 from rag.embeddings import get_embeddings_model
 
+def get_embeddings():
+    """Return the embedding function used by the configured vector store."""
+    return get_embeddings_model()
+
 def _local_store() -> VectorStore:
     from langchain_chroma import Chroma
     log.info("Using local chroma vector store ",path=settings.chroma_dir)
     return Chroma(
         collection_name=settings.chroma_collection,
-        embedding_function=get_embeddings_model(),
+        embedding_function=get_embeddings(),
         persist_directory=settings.chroma_dir,
     )
 def _cloud_store() -> VectorStore:
@@ -26,7 +30,7 @@ def _cloud_store() -> VectorStore:
     return VectorSearchVectorStore.from_components(
         project_id=settings.GCP_PROJECT,
         region=settings.GCP_REGION,
-        embedding=get_embeddings_model,
+        embedding=get_embeddings,
         index_id=settings.vector_search_index_id,
         endpoint_id=settings.vector_search_index_endpoint_id,
         gcs_bucket_name=settings.GCS_BUCKET_NAME,
