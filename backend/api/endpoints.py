@@ -88,11 +88,11 @@ def system_status():
             "stream_update": cloud,
         },
         "models": {
-            "embedding": settings.embedding_model_name if cloud else settings.local_embedding_model_name,
-            "llm": settings.llm_model_name,
+            "embedding": settings.embedding_model_name if cloud else settings.openrouter_embedding_model_name,
+            "llm": settings.llm_model_name if cloud else settings.openrouter_model_name,
             "llm_framework": (
                 "Gemini API (chat) + Vertex AI (embeddings) via LangChain v1" if cloud
-                else "Gemini API (chat + embeddings) via LangChain v1"
+                else "OpenRouter (Gemini chat + embeddings) via LangChain v1"
             ),
         },
         "ingestion": {

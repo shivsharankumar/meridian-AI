@@ -1,11 +1,25 @@
 from functools import lru_cache
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from config.settings import settings
 from exceptions import ConfigurationError
 
 @lru_cache(maxsize=1) #least recently used cache, only one instance of the model is created and reused
-def get_llm() -> ChatGoogleGenerativeAI:
+def get_llm() -> ChatGoogleGenerativeAI | ChatOpenAI:
     """Create the chat model on first use (not at import time) and reuse it afterwards."""
+    if not settings.is_cloud:
+        if not settings.OPENROUTER_API_KEY:
+            raise ConfigurationError(
+                "APP_MODE=local needs OPENROUTER_API_KEY "
+                "(GOOGLE_API_KEY is no longer used for local mode)."
+            )
+        return ChatOpenAI(
+            model=settings.openrouter_model_name,
+            temperature=settings.llm_temperature,
+            api_key=settings.OPENROUTER_API_KEY,
+            base_url=settings.openrouter_base_url,
+        )
+
     if not settings.GOOGLE_API_KEY:
         raise ConfigurationError("Google api key is empty — please add GOOGLE_API_KEY in your environment or .env file.")
 

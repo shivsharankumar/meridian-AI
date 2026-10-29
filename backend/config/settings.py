@@ -15,8 +15,21 @@ class Settings(BaseSettings):
     # --- The toggle ---
     app_mode:Literal["local","cloud"]=Field("local", validation_alias="APP_MODE")
 
-    #--gemini API key--
-    GOOGLE_API_KEY:str=Field(..., validation_alias="GOOGLE_API_KEY")
+    # --Provider API keys--
+    GOOGLE_API_KEY:str=Field("", validation_alias="GOOGLE_API_KEY")
+    OPENROUTER_API_KEY:str=Field("", validation_alias="OPENROUTER_API_KEY")
+    openrouter_base_url:str=Field(
+        "https://openrouter.ai/api/v1",
+        validation_alias="OPENROUTER_BASE_URL",
+    )
+    openrouter_model_name:str=Field(
+        "google/gemini-3.8-flash",
+        validation_alias="OPENROUTER_MODEL",
+    )
+    openrouter_embedding_model_name:str=Field(
+        "openai/text-embedding-3-small",
+        validation_alias="OPENROUTER_EMBEDDING_MODEL",
+    )
     llm_model_name:str=Field("gemini-3.8-flash", validation_alias="VERTEX_LLM_MODEL_NAME")
     llm_temperature:float=Field(0.0, validation_alias="LLM_TEMPERATURE")
     # --Embedding model--

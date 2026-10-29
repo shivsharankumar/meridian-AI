@@ -143,7 +143,7 @@ api  →  rag, agent  →  config, logger
 | For | You need |
 |---|---|
 | Everything | **Python 3.12**, **Git**. For the web page also **Node.js 20+** |
-| The audit feature | A free **Gemini API key** from https://aistudio.google.com/apikey |
+| The audit feature | An **OpenRouter API key** from https://openrouter.ai/keys |
 | Document Q&A | A **Google Cloud** project (see [DEPLOY.md](DEPLOY.md)) |
 
 ### Quick start: the audit (about 10 minutes, no Google Cloud)
@@ -158,9 +158,9 @@ python3.12 -m venv .venv
 source .venv/bin/activate            # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 
-# 3. Create your settings file and add your Gemini key
+# 3. Create your settings file and add your OpenRouter key
 cp .env.example .env                 # Windows: copy .env.example .env
-#    open .env and set:  GOOGLE_API_KEY=your-key
+#    open .env and set:  OPENROUTER_API_KEY=your-key
 
 # 4. Start the backend
 uvicorn api.main:app --app-dir backend --reload --port 8080
@@ -240,7 +240,10 @@ Settings live in `.env` (copy `.env.example`). `.env` is never uploaded to Git.
 
 | Setting | Meaning | Needed for |
 |---|---|---|
-| `GOOGLE_API_KEY` | Your Gemini key | Everything with AI |
+| `OPENROUTER_API_KEY` | Your OpenRouter key | Local mode AI |
+| `OPENROUTER_MODEL` | OpenRouter chat model, default `google/gemini-3.8-flash` | Local mode |
+| `OPENROUTER_EMBEDDING_MODEL` | OpenRouter embedding model, default `openai/text-embedding-3-small` | Local document Q&A |
+| `GOOGLE_API_KEY` | Your Gemini key | Cloud mode only |
 | `GCP_PROJECT_ID` | Your Google Cloud project | Document Q&A |
 | `GCP_REGION` | Where it runs, e.g. `us-central1` | Document Q&A |
 | `GCS_BUCKET_NAME` | Cloud Storage bucket name | Document Q&A |
@@ -253,6 +256,9 @@ Settings live in `.env` (copy `.env.example`). `.env` is never uploaded to Git.
 | `LLM_TEMPERATURE` | `0` = most repeatable answers | Optional |
 
 > AI model names are retired from time to time. If you see "model not found", look up a current name at https://ai.google.dev/gemini-api/docs/models and set `VERTEX_LLM_MODEL_NAME`.
+
+Local mode uses OpenRouter exclusively. The chat model can be Gemini Flash through
+`OPENROUTER_MODEL`; embeddings use the separate `OPENROUTER_EMBEDDING_MODEL`.
 
 ---
 

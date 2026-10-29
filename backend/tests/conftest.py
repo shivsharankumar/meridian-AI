@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ["APP_MODE"] = "local"
 os.environ["LOCAL_DATA_DIR"] = tempfile.mkdtemp(prefix="meridian-test-")
 os.environ["GOOGLE_API_KEY"] = "test-key"
+os.environ["OPENROUTER_API_KEY"] = "test-key"
 os.environ["GCP_PROJECT_ID"] = "test-project"
 os.environ["GCP_REGION"] = "us-central1"
 # Empty on purpose: nothing may try to reach Cloud Storage
