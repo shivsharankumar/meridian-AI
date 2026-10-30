@@ -1,0 +1,45 @@
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/frontend
+
+COPY frontend/package.json frontend/package-lock.json* ./
+# Use npm ci if package-lock is present, else install
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+COPY frontend/ ./
+RUN npm run build
+
+
+FROM python:3.12-slim AS backend-builder
+WORKDIR /app
+
+# Set environment variables for Python
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Use uv instead of pip: faster parallel downloads and retries on flaky networks
+# (installed from PyPI because ghcr.io is unreachable/slow on this network)
+RUN pip install --no-cache-dir --default-timeout=120 uv==0.9.5
+ENV UV_HTTP_TIMEOUT=120 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r requirements.txt
+
+# Copy backend application code
+COPY backend/ ./backend/
+
+# Copy environment variables and credentials (Uncomment during local development)
+# COPY .env ./
+# COPY credentials/ ./credentials/
+
+# Copy built frontend static files from the frontend-builder stage
+COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
+
+# Expose the single port Cloud Run / local test will use
+EXPOSE 8080
+
+# Start the application using Uvicorn
+# JSON form + "sh -c" keeps ${PORT} expansion; "exec" makes uvicorn PID 1 so it receives SIGTERM
+CMD ["sh", "-c", "exec uvicorn api.main:app --app-dir backend --host 0.0.0.0 --port ${PORT:-8080}"]

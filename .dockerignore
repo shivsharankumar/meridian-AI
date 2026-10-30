@@ -28,3 +28,10 @@ logs/
 # Node (frontend build happens inside Docker)
 frontend/node_modules/
 frontend/dist/
+# Local Python env & tool caches (huge; deps are installed inside the image)
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+uploads/
