@@ -23,10 +23,10 @@ def _cloud_store() -> VectorStore:
     missing=settings.missing_cloud_settings()
     if missing:
         raise ConfigurationError(f"APP_MODE=cloud but these settings are empty:{','.join(missing)}")
-    from google.cloud import apiplatform
+    from google.cloud import aiplatform
     from langchain_google_vertexai import VectorSearchVectorStore
     log.info("Using Vertex AI vector search ",index_id=settings.vector_search_index_id)
-    apiplatform.init(project=settings.GCP_PROJECT,location=settings.GCP_REGION)
+    aiplatform.init(project=settings.GCP_PROJECT,location=settings.GCP_REGION)
     return VectorSearchVectorStore.from_components(
         project_id=settings.GCP_PROJECT,
         region=settings.GCP_REGION,
