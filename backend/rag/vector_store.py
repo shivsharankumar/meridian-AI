@@ -30,7 +30,7 @@ def _cloud_store() -> VectorStore:
     return VectorSearchVectorStore.from_components(
         project_id=settings.GCP_PROJECT,
         region=settings.GCP_REGION,
-        embedding=get_embeddings,
+        embedding=get_embeddings(),
         index_id=settings.vector_search_index_id,
         endpoint_id=settings.vector_search_index_endpoint_id,
         gcs_bucket_name=settings.GCS_BUCKET_NAME,
