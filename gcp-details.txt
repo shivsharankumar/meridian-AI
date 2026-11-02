@@ -1,0 +1,8 @@
+For this you need in this project :- 
+The gemini Key 
+Your Google Cloud Acoount
+Your Project we need 
+Billing and budget alert -> Billing-> Billing and cap -> create new
+gcloud on your computer using this link :- https://docs.cloud.google.com/sdk/docs/install-sdk#deb
+    gcloud auth login 
+    
