@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     GCP_REGION:str=Field("us-central1", validation_alias="GCP_REGION")
     GCS_BUCKET_NAME:str=Field(..., validation_alias="GCS_BUCKET_NAME")
     GCS_PREFIX:str=Field("uploads/", validation_alias="GCS_PREFIX")
-    gcp_service_account_path:Path=Field("", validation_alias="GCP_SERVICE_ACCOUNT_PATH")
+    gcp_service_account_path:str=Field("", validation_alias="GCP_SERVICE_ACCOUNT_PATH")
     vector_search_index_id:str=Field(..., validation_alias="VECTOR_SEARCH_INDEX_ID")
     vector_search_index_endpoint_id:str=Field(..., validation_alias="VECTOR_SEARCH_INDEX_ENDPOINT_ID")
 
@@ -91,8 +91,22 @@ if settings.is_cloud and settings.gcp_service_account_path:
     key_path=Path(settings.gcp_service_account_path)
     if not key_path.is_absolute():
         key_path=PROJECT_ROOT/key_path
-    if key_path.exists():
+    if key_path.is_file():
         os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", str(key_path))
+# Credentials: on Cloud Run, use the attached service account (no key file).
+# Locally, use a key file only if it really exists.
+# _gac = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+# if _gac and not os.path.isfile(_gac):
+#     # Bad or empty value (e.g. "." or a directory): drop it so default credentials are used
+#     os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+
+# on_cloud_run = bool(os.environ.get("K_SERVICE"))   # Cloud Run sets this automatically
+
+# if settings.is_cloud and settings.gcp_service_account_path and not on_cloud_run:
+#     key_path = Path(settings.gcp_service_account_path)
+#     if not key_path.is_absolute():
+#         key_path = PROJECT_ROOT / key_path
+#     if key_path.is_file():
+#         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(key_path)
 
 
-     

@@ -5,4 +5,32 @@ Your Project we need
 Billing and budget alert -> Billing-> Billing and cap -> create new
 gcloud on your computer using this link :- https://docs.cloud.google.com/sdk/docs/install-sdk#deb
     gcloud auth login 
-    
+
+
+
+#delete gcp resources in one go :- 
+PROJECT_ID=prefab-grid-4874
+REGION=us-central1
+
+# 1. Cloud Run
+gcloud run services delete meridian-ai-cloud-run --region=$REGION --quiet
+
+# 2. Vertex AI: undeploy, then delete endpoint, then index
+ENDPOINT_ID=$(gcloud ai index-endpoints list --region=$REGION --filter="displayName=financial-docs-endpoint" --format="value(name)" | awk -F/ '{print $NF}')
+INDEX_ID=$(gcloud ai indexes list --region=$REGION --filter="displayName=financial-docs-production" --format="value(name)" | awk -F/ '{print $NF}')
+DEPLOYED_ID=$(gcloud ai index-endpoints describe $ENDPOINT_ID --region=$REGION --format="value(deployedIndexes.id)")
+
+gcloud ai index-endpoints undeploy-index $ENDPOINT_ID --deployed-index-id=$DEPLOYED_ID --region=$REGION
+gcloud ai index-endpoints delete $ENDPOINT_ID --region=$REGION --quiet
+gcloud ai indexes delete $INDEX_ID --region=$REGION --quiet
+
+# 3. Storage bucket and container images
+gcloud storage rm -r gs://$PROJECT_ID-vector-staging
+gcloud container images delete gcr.io/$PROJECT_ID/meridian-ai-cloud-run --force-delete-tags --quiet
+
+# 4. Secret and service account
+gcloud secrets delete GOOGLE_API_KEY --quiet
+gcloud iam service-accounts delete github-deployer@$PROJECT_ID.iam.gserviceaccount.com --quiet
+
+
+gcloud asset search-all-resources --scope="projects/prefab-grid-513211-r8"
