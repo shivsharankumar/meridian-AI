@@ -34,3 +34,9 @@ gcloud iam service-accounts delete github-deployer@$PROJECT_ID.iam.gserviceaccou
 
 
 gcloud asset search-all-resources --scope="projects/xyz"
+
+#to redeploy GOOGLE_API_KEY your key just use :-
+echo -n "NEW_KEY" | gcloud secrets versions add GOOGLE_API_KEY --data-file=-
+gcloud run services update meridian-ai-cloud-run --region us-central1 \
+  --update-env-vars=KEY_REFRESH=$(date +%s)
+

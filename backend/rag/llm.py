@@ -20,13 +20,16 @@ def get_llm() -> ChatGoogleGenerativeAI | ChatOpenAI:
             base_url=settings.openrouter_base_url,
         )
 
-    if not settings.GOOGLE_API_KEY:
-        raise ConfigurationError("Google api key is empty — please add GOOGLE_API_KEY in your environment or .env file.")
+    if not settings.GCP_PROJECT:
+        raise ConfigurationError("APP_MODE=cloud needs GCP_PROJECT_ID for Vertex AI Gemini")
 
+    # Cloud: authenticates with the Cloud Run service account (no API key to store or rotate)
     return ChatGoogleGenerativeAI(
         model=settings.llm_model_name,
         temperature=settings.llm_temperature,
-        google_api_key=settings.GOOGLE_API_KEY
+        vertexai=True,
+        project=settings.GCP_PROJECT,
+        location=settings.GCP_REGION,
     )
 """`lru_cache` is a Python decorator that remembers the result of a function call. 
 If you call the function again with the same inputs, Python returns the remembered result instead of running the function again.
