@@ -29,7 +29,7 @@ def get_llm() -> ChatGoogleGenerativeAI | ChatOpenAI:
         temperature=settings.llm_temperature,
         vertexai=True,
         project=settings.GCP_PROJECT,
-        location=settings.GCP_REGION,
+        location=settings.llm_location,
     )
 """`lru_cache` is a Python decorator that remembers the result of a function call. 
 If you call the function again with the same inputs, Python returns the remembered result instead of running the function again.

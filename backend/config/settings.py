@@ -30,7 +30,9 @@ class Settings(BaseSettings):
         "openai/text-embedding-3-small",
         validation_alias="OPENROUTER_EMBEDDING_MODEL",
     )
-    llm_model_name:str=Field("gemini-3.8-flash", validation_alias="VERTEX_LLM_MODEL_NAME")
+    llm_model_name:str=Field("gemini-3-flash-preview", validation_alias="VERTEX_LLM_MODEL_NAME")
+    # Gemini 3 models are served from the "global" Vertex location, not from a region like us-central1
+    llm_location:str=Field("global", validation_alias="VERTEX_LLM_LOCATION")
     llm_temperature:float=Field(0.0, validation_alias="LLM_TEMPERATURE")
     # --Embedding model--
     embedding_model_name:str=Field("text-embedding-005", validation_alias="VERTEX_EMBEDDING_MODEL_NAME")
