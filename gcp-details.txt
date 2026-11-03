@@ -9,7 +9,7 @@ gcloud on your computer using this link :- https://docs.cloud.google.com/sdk/doc
 
 
 #delete gcp resources in one go :- 
-PROJECT_ID=prefab-grid-4874
+PROJECT_ID=prefab-grid-513211-r8
 REGION=us-central1
 
 # 1. Cloud Run

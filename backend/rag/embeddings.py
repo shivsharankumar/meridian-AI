@@ -22,7 +22,7 @@ def get_embeddings_model() -> GoogleGenerativeAIEmbeddings | OpenAIEmbeddings:
             raise ConfigurationError("APP_MODE=cloud needs GCP_PROJECT_ID for Vertex AI embeddings")
         #cloud part
         return GoogleGenerativeAIEmbeddings(
-            model=settings.embeddings_model_name,
+            model=settings.embedding_model_name,
             vertexai=True,
             project=settings.GCP_PROJECT,
             location=settings.GCP_REGION,
