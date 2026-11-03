@@ -9,7 +9,7 @@ gcloud on your computer using this link :- https://docs.cloud.google.com/sdk/doc
 
 
 #delete gcp resources in one go :- 
-PROJECT_ID=prefab-grid-513211-r8
+PROJECT_ID=xyz
 REGION=us-central1
 
 # 1. Cloud Run
@@ -33,4 +33,4 @@ gcloud secrets delete GOOGLE_API_KEY --quiet
 gcloud iam service-accounts delete github-deployer@$PROJECT_ID.iam.gserviceaccount.com --quiet
 
 
-gcloud asset search-all-resources --scope="projects/prefab-grid-513211-r8"
+gcloud asset search-all-resources --scope="projects/xyz"
