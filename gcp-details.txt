@@ -9,7 +9,7 @@ gcloud on your computer using this link :- https://docs.cloud.google.com/sdk/doc
 
 
 #delete gcp resources in one go :- 
-PROJECT_ID=xyz
+PROJECT_ID=prefab-grid-513211-r8
 REGION=us-central1
 
 # 1. Cloud Run
@@ -33,7 +33,7 @@ gcloud secrets delete GOOGLE_API_KEY --quiet
 gcloud iam service-accounts delete github-deployer@$PROJECT_ID.iam.gserviceaccount.com --quiet
 
 
-gcloud asset search-all-resources --scope="projects/xyz"
+gcloud asset search-all-resources --scope="projects/prefab-grid-513211-r8"
 
 #to redeploy GOOGLE_API_KEY your key just use :-
 echo -n "NEW_KEY" | gcloud secrets versions add GOOGLE_API_KEY --data-file=-
