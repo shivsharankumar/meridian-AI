@@ -1,0 +1,281 @@
+name: Deploy to AWS App Runner
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# One deploy at a time: a second run waits instead of racing the first.
+# Not cancelled mid-way, so a half-finished deploy (e.g. collection creation) is never interrupted.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGION: us-east-1
+  SERVICE_NAME: meridian-ai-app-runner
+  ECR_REPO: meridian-ai-app-runner
+  COLLECTION_NAME: financial-docs-prod
+  INDEX_NAME: financial-docs-production
+  INSTANCE_ROLE: meridian-ai-instance-role
+  ECR_ACCESS_ROLE: meridian-ai-ecr-access-role
+
+jobs:
+  deploy:
+    name: Provision & Deploy
+    runs-on: ubuntu-latest
+    # INERT GUARD: this file only runs once it has been renamed to deploy.yml.
+    # While it is called deploy-aws.yml the job is skipped.
+    if: contains(github.workflow_ref, '/.github/workflows/deploy.yml@')
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.REGION }}
+
+      - name: Resolve Account Details
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          # Deployer's role ARN (not the assumed-role session ARN) for the data access policy
+          CALLER_ARN=$(aws sts get-caller-identity --query Arn --output text)
+          DEPLOYER_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/$(echo "$CALLER_ARN" | cut -d/ -f2)"
+          echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
+          echo "DEPLOYER_ROLE_ARN=$DEPLOYER_ROLE_ARN" >> $GITHUB_ENV
+          echo "DATA_BUCKET=${ACCOUNT_ID}-meridian-vector-staging" >> $GITHUB_ENV
+          echo "IMAGE_NAME=${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPO}" >> $GITHUB_ENV
+
+      # --- Phase 1: Storage Bucket ---
+      - name: Ensure S3 Bucket Exists
+        run: |
+          if ! aws s3api head-bucket --bucket "$DATA_BUCKET" >/dev/null 2>&1; then
+            echo "Creating data bucket..."
+            # us-east-1 must NOT pass a LocationConstraint
+            aws s3api create-bucket --bucket "$DATA_BUCKET" --region "$REGION"
+            aws s3api put-public-access-block --bucket "$DATA_BUCKET" \
+              --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+            aws s3api put-bucket-encryption --bucket "$DATA_BUCKET" \
+              --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+          else
+            echo "Data bucket already exists."
+          fi
+
+      # --- Phase 2: IAM roles for App Runner ---
+      - name: Ensure App Runner IAM Roles Exist
+        run: |
+          # Role App Runner uses to pull the image from ECR
+          if ! aws iam get-role --role-name "$ECR_ACCESS_ROLE" >/dev/null 2>&1; then
+            aws iam create-role --role-name "$ECR_ACCESS_ROLE" \
+              --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"build.apprunner.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+            aws iam attach-role-policy --role-name "$ECR_ACCESS_ROLE" \
+              --policy-arn arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+          fi
+
+          # Role the running app uses: Bedrock (LLM + embeddings), S3 (chunk text, uploads, logs), OpenSearch Serverless (vector search)
+          if ! aws iam get-role --role-name "$INSTANCE_ROLE" >/dev/null 2>&1; then
+            aws iam create-role --role-name "$INSTANCE_ROLE" \
+              --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"tasks.apprunner.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+          fi
+          cat <<EOF > instance_policy.json
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"], "Resource": "*"},
+              {"Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+               "Resource": ["arn:aws:s3:::${DATA_BUCKET}", "arn:aws:s3:::${DATA_BUCKET}/*"]},
+              {"Effect": "Allow", "Action": ["aoss:APIAccessAll"], "Resource": "arn:aws:aoss:${REGION}:${ACCOUNT_ID}:collection/*"}
+            ]
+          }
+          EOF
+          aws iam put-role-policy --role-name "$INSTANCE_ROLE" --policy-name meridian-ai-runtime --policy-document file://instance_policy.json
+
+          echo "INSTANCE_ROLE_ARN=arn:aws:iam::${ACCOUNT_ID}:role/${INSTANCE_ROLE}" >> $GITHUB_ENV
+          echo "ECR_ACCESS_ROLE_ARN=arn:aws:iam::${ACCOUNT_ID}:role/${ECR_ACCESS_ROLE}" >> $GITHUB_ENV
+
+          echo "Waiting 20 seconds for IAM propagation..."
+          sleep 20
+
+      # --- Phase 3: Vector Search Provisioning (OpenSearch Serverless) ---
+      - name: Provision Vector Search Collection & Index
+        timeout-minutes: 45
+        run: |
+          pip install --quiet awscurl
+
+          # 1. Security policies must exist before the collection
+          aws opensearchserverless create-security-policy --name "${COLLECTION_NAME}-enc" --type encryption \
+            --policy "{\"Rules\":[{\"ResourceType\":\"collection\",\"Resource\":[\"collection/${COLLECTION_NAME}\"]}],\"AWSOwnedKey\":true}" 2>/dev/null \
+            || echo "Encryption policy already exists."
+
+          aws opensearchserverless create-security-policy --name "${COLLECTION_NAME}-net" --type network \
+            --policy "[{\"Rules\":[{\"ResourceType\":\"collection\",\"Resource\":[\"collection/${COLLECTION_NAME}\"]}],\"AllowFromPublic\":true}]" 2>/dev/null \
+            || echo "Network policy already exists."
+
+          # 2. Data access: deployer (creates the index) and the app's instance role
+          cat <<EOF > data_access_policy.json
+          [{
+            "Rules": [
+              {"ResourceType": "collection", "Resource": ["collection/${COLLECTION_NAME}"], "Permission": ["aoss:*"]},
+              {"ResourceType": "index", "Resource": ["index/${COLLECTION_NAME}/*"], "Permission": ["aoss:*"]}
+            ],
+            "Principal": ["${DEPLOYER_ROLE_ARN}", "${INSTANCE_ROLE_ARN}"]
+          }]
+          EOF
+          if aws opensearchserverless create-access-policy --name "${COLLECTION_NAME}-access" --type data \
+               --policy file://data_access_policy.json >/dev/null 2>&1; then
+            echo "Created data access policy."
+          else
+            aws opensearchserverless update-access-policy --name "${COLLECTION_NAME}-access" --type data \
+              --policy-version "$(aws opensearchserverless get-access-policy --name "${COLLECTION_NAME}-access" --type data --query 'accessPolicyDetail.policyVersion' --output text)" \
+              --policy file://data_access_policy.json >/dev/null 2>&1 || echo "Data access policy already up to date."
+          fi
+
+          # 3. Ensure the collection exists
+          COLLECTION_ID=$(aws opensearchserverless batch-get-collection --names "$COLLECTION_NAME" --query 'collectionDetails[0].id' --output text)
+          if [ "$COLLECTION_ID" = "None" ] || [ -z "$COLLECTION_ID" ]; then
+            echo "Creating Vector Search collection..."
+            aws opensearchserverless create-collection --name "$COLLECTION_NAME" --type VECTORSEARCH >/dev/null
+            COLLECTION_ID=$(aws opensearchserverless batch-get-collection --names "$COLLECTION_NAME" --query 'collectionDetails[0].id' --output text)
+          else
+            echo "Collection already exists: $COLLECTION_ID"
+          fi
+
+          echo "Waiting up to 30 minutes for the collection to become ACTIVE..."
+          for attempt in $(seq 1 60); do
+            STATUS=$(aws opensearchserverless batch-get-collection --names "$COLLECTION_NAME" --query 'collectionDetails[0].status' --output text)
+            if [ "$STATUS" = "ACTIVE" ]; then
+              echo "Collection is ACTIVE."
+              break
+            fi
+            if [ "$STATUS" = "FAILED" ]; then
+              echo "ERROR: collection creation failed. Check the OpenSearch Serverless console, then run this workflow again."
+              exit 1
+            fi
+            echo "Attempt $attempt/60: status is $STATUS... waiting 30 seconds."
+            sleep 30
+          done
+          if [ "$STATUS" != "ACTIVE" ]; then
+            echo "ERROR: collection is still not ACTIVE after 30 minutes."
+            exit 1
+          fi
+
+          COLLECTION_ENDPOINT="https://${COLLECTION_ID}.${REGION}.aoss.amazonaws.com"
+
+          # 4. Ensure the vector index exists (data access policy can take a minute to apply, so retry)
+          for attempt in $(seq 1 10); do
+            CODE=$(awscurl --service aoss --region "$REGION" -X GET -o /dev/null -w "%{http_code}" "${COLLECTION_ENDPOINT}/${INDEX_NAME}" 2>/dev/null || true)
+            if [ "$CODE" = "200" ]; then
+              echo "Index already exists."
+              break
+            fi
+            echo "Creating vector index (attempt $attempt/10)..."
+            if awscurl --service aoss --region "$REGION" -X PUT "${COLLECTION_ENDPOINT}/${INDEX_NAME}" \
+                 -H "Content-Type: application/json" \
+                 -d '{
+                   "settings": {"index.knn": true},
+                   "mappings": {"properties": {
+                     "embedding": {"type": "knn_vector", "dimension": 1024,
+                       "method": {"name": "hnsw", "engine": "faiss", "space_type": "innerproduct"}},
+                     "text": {"type": "text"},
+                     "metadata": {"type": "object"}
+                   }}
+                 }' >/dev/null 2>&1; then
+              echo "Index created."
+              break
+            fi
+            sleep 30
+          done
+
+          echo "COLLECTION_ID=$COLLECTION_ID" >> $GITHUB_ENV
+          echo "COLLECTION_ENDPOINT=$COLLECTION_ENDPOINT" >> $GITHUB_ENV
+
+      # --- Phase 4: Build & Deploy Application ---
+      - name: Build and Push Docker Image
+        run: |
+          aws ecr describe-repositories --repository-names "$ECR_REPO" >/dev/null 2>&1 \
+            || aws ecr create-repository --repository-name "$ECR_REPO" --image-scanning-configuration scanOnPush=true >/dev/null
+
+          aws ecr get-login-password --region "$REGION" \
+            | docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+
+          docker build -t "$IMAGE_NAME:${{ github.sha }}" -t "$IMAGE_NAME:latest" .
+          docker push "$IMAGE_NAME:${{ github.sha }}"
+          docker push "$IMAGE_NAME:latest"
+
+      - name: Deploy to App Runner
+        run: |
+          cat <<EOF > source_config.json
+          {
+            "ImageRepository": {
+              "ImageIdentifier": "${IMAGE_NAME}:${{ github.sha }}",
+              "ImageRepositoryType": "ECR",
+              "ImageConfiguration": {
+                "Port": "8080",
+                "RuntimeEnvironmentVariables": {
+                  "APP_MODE": "cloud",
+                  "ENVIRONMENT": "production",
+                  "AWS_ACCOUNT_ID": "${ACCOUNT_ID}",
+                  "AWS_REGION": "${REGION}",
+                  "S3_BUCKET_NAME": "${DATA_BUCKET}",
+                  "S3_PREFIX": "uploads/",
+                  "BEDROCK_LLM_MODEL_ID": "us.amazon.nova-pro-v1:0",
+                  "BEDROCK_EMBEDDING_MODEL_ID": "amazon.titan-embed-text-v2:0",
+                  "OPENSEARCH_ENDPOINT": "${COLLECTION_ENDPOINT}",
+                  "OPENSEARCH_INDEX_NAME": "${INDEX_NAME}"
+                }
+              }
+            },
+            "AuthenticationConfiguration": {"AccessRoleArn": "${ECR_ACCESS_ROLE_ARN}"},
+            "AutoDeploymentsEnabled": false
+          }
+          EOF
+
+          SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='${SERVICE_NAME}'].ServiceArn | [0]" --output text)
+
+          if [ "$SERVICE_ARN" = "None" ] || [ -z "$SERVICE_ARN" ]; then
+            echo "Creating App Runner service..."
+            SERVICE_ARN=$(aws apprunner create-service \
+              --service-name "$SERVICE_NAME" \
+              --source-configuration file://source_config.json \
+              --instance-configuration "Cpu=1024,Memory=2048,InstanceRoleArn=${INSTANCE_ROLE_ARN}" \
+              --auto-scaling-configuration-arn "$(aws apprunner create-auto-scaling-configuration \
+                  --auto-scaling-configuration-name meridian-ai-scaling --max-size 3 \
+                  --query 'AutoScalingConfiguration.AutoScalingConfigurationArn' --output text)" \
+              --health-check-configuration Protocol=TCP \
+              --query 'Service.ServiceArn' --output text)
+          else
+            echo "Updating App Runner service..."
+            aws apprunner update-service \
+              --service-arn "$SERVICE_ARN" \
+              --source-configuration file://source_config.json \
+              --instance-configuration "Cpu=1024,Memory=2048,InstanceRoleArn=${INSTANCE_ROLE_ARN}" >/dev/null
+          fi
+
+          echo "Waiting up to 20 minutes for the service to be RUNNING..."
+          for attempt in $(seq 1 40); do
+            STATUS=$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --query 'Service.Status' --output text)
+            if [ "$STATUS" = "RUNNING" ]; then
+              break
+            fi
+            if [ "$STATUS" = "CREATE_FAILED" ] || [ "$STATUS" = "OPERATION_FAILED" ]; then
+              echo "ERROR: App Runner reported $STATUS. Check the service events in the console."
+              exit 1
+            fi
+            echo "Attempt $attempt/40: status is $STATUS... waiting 30 seconds."
+            sleep 30
+          done
+          if [ "$STATUS" != "RUNNING" ]; then
+            echo "ERROR: service is still not RUNNING after 20 minutes."
+            exit 1
+          fi
+
+          # App Runner services are public by default (no allUsers binding needed)
+          SERVICE_URL=$(aws apprunner describe-service --service-arn "$SERVICE_ARN" --query 'Service.ServiceUrl' --output text)
+          echo "Deployed: https://${SERVICE_URL}"
