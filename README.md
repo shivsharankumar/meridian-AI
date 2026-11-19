@@ -192,7 +192,7 @@ The System Status tab (and `GET /api/status`) shows which mode is running.
 
 ```bash
 # 1. Get the code (or download the ZIP from GitHub and unzip it)
-git clone https://github.com/mayank953/meridian-ai-learner.git
+git clone https://github.com/shivsharankumar/meridian-AI.git
 cd meridian-ai-learner
 
 # 2. Make a private Python environment and install the packages
